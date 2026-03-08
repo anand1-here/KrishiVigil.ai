@@ -55,31 +55,40 @@ KrishiVigil.ai lets farmers upload an image of any infected part of their crop �
 ---
 # 🏗 System Architecture
 
-Farmer / User
-│
-▼
-React Frontend (Vite + React)
-│
-│ REST API
-▼
-Flask Backend (Python API)
-│
-┌────┴───────────────┐
-│ │
-▼ ▼
-YOLOv8 Model Weather API
-(.pt file) (OpenWeatherMap)
-│ │
-└────────────┬───────┘
-▼
-Economic Engine
-(MSP rates + Yield data)
-│
-▼
-JSON Response
-│
-▼
-React Dashboard
+## 🏗 System Architecture
+
+```mermaid
+flowchart TD
+
+A[Farmer / User] --> B[React Frontend (Vite + React)]
+B --> C[Image Upload + Crop Input]
+C --> D[REST API Request]
+
+D --> E[Flask Backend (Python API)]
+
+E --> F[YOLOv8 AI Model]
+E --> G[Weather Service]
+
+G --> H[OpenWeatherMap API]
+F --> I[Disease Classification + Confidence]
+
+I --> J[Economic Engine]
+H --> J
+
+J --> K[MSP Crop Prices]
+J --> L[Yield Loss Tables]
+
+K --> M[Economic Loss Calculation]
+L --> M
+
+M --> N[JSON API Response]
+
+N --> O[React Result Dashboard]
+
+O --> P[Treatment Recommendations]
+O --> Q[Weather Risk Analysis]
+O --> R[Government Scheme Suggestions]
+
         
 ## 🤖 AI Model
 
