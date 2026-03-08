@@ -10,6 +10,11 @@
 © belongs to @krishnaVatsa & @Anand1-here
 Research & Analysis: Kaustuv Baidya & Divyansh Kumar
 
+## ⚠️ Note:
+
+- `plant_model_yolo.pt` is **not included** in this repository (too large for GitHub).
+    **google drive link:https://drive.google.com/file/d/1WMkEAFaYNQJmYumPE-btegfXaN5VvQd8/view?usp=drive_link**
+
 ---
 
 
@@ -75,6 +80,8 @@ KrishiVigil.ai lets farmers upload an image of any infected part of their crop �
                   │
       ┌───────────┼─────────────┐
       ▼                           ▼
+
+
 
 ┌──────────────┐        ┌─────────────────┐
 │ YOLOv8 Model │        │ Weather Service │
