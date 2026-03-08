@@ -58,53 +58,28 @@ KrishiVigil.ai lets farmers upload an image of any infected part of their crop �
 Farmer / User
 │
 ▼
-┌─────────────────────────────┐
-│ React Frontend │
-│ (Vite + React) │
-│ │
-│ • Image Upload Interface │
-│ • Crop + Land Input │
-│ • Result Dashboard │
-└──────────────┬──────────────┘
+React Frontend (Vite + React)
 │
 │ REST API
 ▼
-┌─────────────────────────────┐
-│ Flask Backend │
-│ (Python API) │
-│ │
-│ • Authentication Routes │
-│ • Prediction API │
-│ • Weather API │
-│ • Scan History API │
-│ • Download API │
-└──────────────┬──────────────┘
+Flask Backend (Python API)
 │
-┌─────────┴─────────┐
-▼ ▼
-
-┌───────────────┐ ┌──────────────────┐
-│ YOLOv8 AI │ │ Weather Service │
-│ Model (.pt) │ │ OpenWeatherMap │
-│ │ │ API │
-│ Disease Class │ │ Temp / Humidity │
-│ Confidence │ │ Risk Score │
-└───────┬───────┘ └─────────┬────────┘
+┌────┴───────────────┐
 │ │
 ▼ ▼
-    ┌──────────────────────────┐
-    │      Economic Engine     │
-    │                          │
-    │ MSP Crop Prices          │
-    │ Yield Loss Tables        │
-    │ Economic Loss Calculator │
-    └──────────────┬───────────┘
-                   │
-                   ▼
-            JSON API Response
-                   │
-                   ▼
-           React Result Dashboard
+YOLOv8 Model Weather API
+(.pt file) (OpenWeatherMap)
+│ │
+└────────────┬───────┘
+▼
+Economic Engine
+(MSP rates + Yield data)
+│
+▼
+JSON Response
+│
+▼
+React Dashboard
         
 ## 🤖 AI Model
 
