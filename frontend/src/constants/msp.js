@@ -1,0 +1,2 @@
+export const MSP_DB={tomato:1200,potato:600,wheat:2275,rice:2183,maize:1962,onion:800,soybean:4600,cotton:6620,sugarcane:315,mustard:5650,sunflower:6760,groundnut:6377,chilli:9000,brinjal:700,cabbage:500,cauliflower:600};
+export const getMSP=(name)=>{const k=name.toLowerCase().trim();return MSP_DB[k]||MSP_DB[Object.keys(MSP_DB).find(c=>c.includes(k)||k.includes(c))]||1200;};

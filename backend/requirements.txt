@@ -1,0 +1,16 @@
+# =============================================================
+# KrishiVigil.ai — Backend Requirements
+# INSTALL: pip3 install -r requirements.txt
+# PYTHON:  3.13 compatible
+# =============================================================
+
+flask==3.0.2
+flask-cors==4.0.0
+Pillow>=10.3.0
+numpy>=1.26.4
+requests==2.31.0
+bcrypt==4.1.2
+PyJWT==2.8.0
+
+# YOLOv8 — installs torch + torchvision automatically
+ultralytics>=8.0.0
