@@ -7,7 +7,7 @@ export const LANGS=[
 
 export const STEPS=[
   {icon:"camera",title:"Upload Any Crop Image",desc:"Leaf, fruit, stem — any visible symptom works"},
-  {icon:"zap",title:"AI Analysis in <3s",desc:"YOLOv8 Plant Disease model runs inference instantly"},
+  {icon:"zap",title:"AI Analysis in <3s",desc:"EfficientNetB3 PlantVillage model runs inference instantly"},
   {icon:"drop",title:"Live Weather Check",desc:"GPS-based field risk assessment from OpenWeatherMap"},
   {icon:"rupee",title:"Exact ₹Loss Estimate",desc:"Calculated with your crop, land & state MSP"},
   {icon:"shield",title:"Government Schemes",desc:"Auto-matched schemes you qualify for"},

@@ -284,6 +284,10 @@ export default function App(){
     setFarmData(data);
     setShowCropPopup(false);
 
+    // Track fresh result from API call
+    let freshResult = apiResult;
+    let freshWeather = weatherData;
+
     // If we already have a result, re-request with crop+land included
     if(selectedFile){
       setAnalyzing(true);
@@ -303,6 +307,8 @@ export default function App(){
           const result = await res.json();
           setApiResult(result);
           if(result.weather) setWeatherData(result.weather);
+          freshResult = result;
+          if(result.weather) freshWeather = result.weather;
         }
       } catch(err){
         console.warn("Re-predict failed:", err);
@@ -317,8 +323,8 @@ export default function App(){
       image: selectedImage,
       crop: data.crop,
       land: data.land,
-      result: apiResult,
-      weather: weatherData,
+      result: freshResult,
+      weather: freshWeather,
     };
     setScanHistory(prev => [newScan, ...prev].slice(0, 50));
 
@@ -417,16 +423,56 @@ export default function App(){
 
   // Economics shorthand
   const econ = R.economics;
-  const lossAmt    = econ?.projected_loss  || 0;
-  const treatCost  = econ?.treatment_cost  || 0;
-  const netSaving  = econ?.net_saving      || 0;
-  const riskLabel  = econ?.risk_label      || "MODERATE";
-  const riskColor  = riskLabel==="SEVERE"?T.red:riskLabel==="HIGH"?T.yel:T.green;
 
-  // Eligible schemes — dynamically computed based on crop + loss + GPS state
-  const eligibleSchemes = SCHEMES.filter(s =>
+  // ── UNIVERSAL HEALTHY CHECK ──────────────────────────────────────────────
+  // Works for ALL crops: Tomato, Wheat, Rice, Potato, Maize, Grape, Apple etc.
+  // Checks the top-detected disease name — if it contains "Healthy", crop is fine.
+  const isHealthy = R.disease
+    ? R.disease.toLowerCase().includes("healthy")
+    : true; // if no disease returned at all, treat as healthy (safe default)
+
+  // ── UNIVERSAL LOSS CALCULATION ───────────────────────────────────────────
+  // Priority 1: backend projected_loss (accurate when confidence > 0)
+  // Priority 2: compute from R.loss_pct (the raw yield loss fraction from predictor.py)
+  //             This works even when backend confidence is 0 — loss_pct is set per-disease
+  // Priority 3: compute from econ.effective_loss_pct
+  // If healthy: always ₹0
+  const msp       = econ?.msp_per_kg || 12;
+  const landAcres = farmData?.land || 1;
+  // Standard yield estimate: 8000 kg/acre (conservative across crops)
+  const yieldKg   = landAcres * 8000;
+
+  let lossAmt = 0;
+  if (!isHealthy) {
+    if (econ?.projected_loss > 0) {
+      lossAmt = econ.projected_loss;
+    } else if (R.loss_pct > 0) {
+      // loss_pct comes directly from ADVICE_DB in predictor.py per disease
+      lossAmt = Math.round(yieldKg * msp * R.loss_pct);
+    } else if (econ?.effective_loss_pct > 0) {
+      lossAmt = Math.round(yieldKg * msp * (econ.effective_loss_pct / 100));
+    } else {
+      // Last resort: parse yield_loss string e.g. "50-80%" → use midpoint
+      const ylStr = R.yield_loss || "";
+      const nums  = ylStr.match(/\d+/g);
+      if (nums && nums.length >= 1) {
+        const mid = nums.length >= 2
+          ? (parseInt(nums[0]) + parseInt(nums[1])) / 2
+          : parseInt(nums[0]);
+        lossAmt = Math.round(yieldKg * msp * (mid / 100));
+      }
+    }
+  }
+
+  const treatCost = econ?.treatment_cost || 0;
+  const netSaving = isHealthy ? 0 : (lossAmt - treatCost > 0 ? lossAmt - treatCost : 0);
+  const riskLabel = econ?.risk_label || "MODERATE";
+  const riskColor = riskLabel==="SEVERE"?T.red:riskLabel==="HIGH"?T.yel:T.green;
+
+  // ── SCHEMES: only when crop is NOT healthy AND there is real loss ─────────
+  const eligibleSchemes = (!isHealthy && lossAmt > 0) ? SCHEMES.filter(s =>
     s.eligFn(farmData?.crop || "", lossAmt, inferredState)
-  ).slice(0, 5);
+  ).slice(0, 5) : [];
 
   // All scores for confidence bars — dynamic colors based on rank not hardcoded names
   const BAR_COLORS = [T.red, "#f97316", T.blu, T.green, "#7c3aed", "#0891b2"];
@@ -570,10 +616,10 @@ export default function App(){
     ${checklistHTML}
   </div>
 
-  <div class="section">
+  ${!isHealthy && R.fungicides?.length > 0 ? `<div class="section">
     <div class="section-title">Recommended Fungicides</div>
     ${fungicidesHTML}
-  </div>
+  </div>` : ""}
 
   ${eligibleSchemes.length>0?`<div class="section">
     <div class="section-title">Government Schemes You Qualify For</div>
@@ -848,7 +894,7 @@ export default function App(){
                   <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"10px 0"}}>
                     <div style={{width:52,height:52,border:`4px solid ${T.border}`,borderTopColor:T.green,borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
                     <div style={{fontWeight:700,color:T.deep,fontSize:"0.9rem"}}>Analyzing with AI...</div>
-                    <div style={{fontSize:"0.7rem",color:T.muted}}>YOLOv8 running inference</div>
+                    <div style={{fontSize:"0.7rem",color:T.muted}}>EfficientNetB3 running inference</div>
                     <div style={{display:"flex",gap:6,marginTop:4}}>
                       {["Preprocessing","Running AI","Weather check","Calculating loss"].map((s,i)=>(
                         <div key={s} style={{background:"#f0fdf4",border:`1px solid ${T.border}`,borderRadius:20,padding:"3px 8px",fontSize:"0.59rem",color:T.green,fontWeight:600,animation:`fadeIn 0.4s ${i*0.35}s both`}}>{s}</div>
@@ -934,7 +980,7 @@ export default function App(){
                 <img src={selectedImage} alt="Uploaded crop" style={{width:68,height:68,objectFit:"cover",borderRadius:12,border:`2px solid ${T.border}`,flexShrink:0}}/>
                 <div>
                   <div style={{fontWeight:700,fontSize:"0.78rem",color:T.deep,marginBottom:3}}>Scanned Image</div>
-                  <div style={{fontSize:"0.68rem",color:T.muted,lineHeight:1.5}}>YOLOv8 Plant Disease model · 52 classes</div>
+                  <div style={{fontSize:"0.68rem",color:T.muted,lineHeight:1.5}}>EfficientNetB3 PlantVillage model · 38 classes</div>
                   <div style={{marginTop:5}}>
                     <div style={{background:"#dcfce7",borderRadius:6,padding:"2px 8px",fontSize:"0.62rem",color:T.green,fontWeight:700,display:"inline-block"}}>
                       {R.demo?"Demo Mode — deploy Flask backend for live AI":"Real AI Result"}
@@ -1054,8 +1100,8 @@ export default function App(){
                 })}
               </div>
 
-              {/* ── FUNGICIDE RECOMMENDATIONS — per disease + crop ── */}
-              <div style={{marginTop:14}}>
+              {/* ── FUNGICIDE RECOMMENDATIONS — only shown when plant is NOT healthy ── */}
+              {!isHealthy && <div style={{marginTop:14}}>
                 <SLabel icon="info" color={T.deep}>Recommended Fungicides</SLabel>
                 {/* fungicides from ADVICE_DB in predictor.py, specific to detected disease + crop */}
                 {(R.fungicides||[]).map((f,fi)=>{
@@ -1076,7 +1122,7 @@ export default function App(){
                     </div>
                   );
                 })}
-              </div>
+              </div>}
             </Card>
 
             {/* ── WEATHER RISK CARD — all from live weather API ── */}
@@ -1164,8 +1210,8 @@ export default function App(){
               </Card>
             )}
 
-            {/* GOVERNMENT SCHEMES — inline expand same as schemes page */}
-            <Card>
+            {/* GOVERNMENT SCHEMES — only show when there is actual loss */}
+            {lossAmt > 0 && <Card>
               <SLabel icon="shield" color={T.deep}>Government Schemes</SLabel>
               {SCHEMES.slice(0,5).map(s=>{
                 const isElig = s.eligFn(farmData?.crop||"", lossAmt, inferredState);
@@ -1241,7 +1287,7 @@ export default function App(){
               <button onClick={()=>go("schemes")} style={{width:"100%",background:"#f0fdf4",border:`1px solid ${T.border}`,borderRadius:11,padding:"10px",fontSize:"0.72rem",fontWeight:600,color:T.deep,cursor:"pointer",fontFamily:"inherit",marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
                 <G n="shield" s={13} c={T.deep} w={2}/> View All {SCHEMES.length} Government Schemes
               </button>
-            </Card>
+            </Card>}
           </div>
         )}
 

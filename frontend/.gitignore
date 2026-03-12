@@ -1,4 +1,4 @@
-git filter-branch --force --index-filter "git rm --cached --ignore-unmatch backend/plant_model_yolo.pt" --prune-empty --tag-name-filter cat -- --all# Logs
+# Logs
 logs
 *.log
 npm-debug.log*

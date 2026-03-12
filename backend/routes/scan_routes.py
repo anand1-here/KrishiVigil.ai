@@ -1,101 +1,249 @@
 # =============================================================
 # FILE: backend/routes/scan_routes.py
+# PURPOSE: Save and retrieve scan history + downloads per user
+#
+# Scan Endpoints:
+#   POST /scans/save       → save a scan result
+#   GET  /scans/history    → get all scans for user
+#   DELETE /scans/<id>     → delete one scan
+#   DELETE /scans/all      → delete all scans
+#
+# Download Endpoints:
+#   POST /downloads/save   → save a full PDF report
+#   GET  /downloads/list   → get all downloads for user
+#   DELETE /downloads/<id> → delete one download
+#   DELETE /downloads/all  → delete all downloads
 # =============================================================
 
-import json, os
 from flask import Blueprint, request, jsonify
-from .auth_routes import _load_users
+import json
 
-scan_bp = Blueprint("scans", __name__)
+from database import get_db
+from routes.auth_routes import get_current_user
 
-SCANS_FILE = os.path.join(os.path.dirname(__file__), "..", "scans.json")
-
-def _get_user_from_token(token):
-    users = _load_users()
-    return next((u for u in users if u.get("token") == token), None)
-
-def _load_scans():
-    if not os.path.exists(SCANS_FILE):
-        return []
-    try:
-        with open(SCANS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-def _save_scans(scans):
-    with open(SCANS_FILE, "w") as f:
-        json.dump(scans, f, indent=2)
-
-def _auth(req):
-    header = req.headers.get("Authorization", "")
-    if not header.startswith("Bearer "):
-        return None
-    return _get_user_from_token(header[7:])
+scans_bp = Blueprint("scans", __name__, url_prefix="/scans")
+downloads_bp = Blueprint("downloads", __name__, url_prefix="/downloads")
 
 
-@scan_bp.route("/scans/save", methods=["POST", "OPTIONS"])
+# ─────────────────────────────────────────────────────────────
+# POST /scans/save
+# ─────────────────────────────────────────────────────────────
+@scans_bp.route("/save", methods=["POST"])
 def save_scan():
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
-    user = _auth(request)
+    user = get_current_user()
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data   = request.get_json() or {}
-    scans  = _load_scans()
-    import secrets, datetime
-    new_scan = {
-        "id":          secrets.token_hex(8),
-        "user_id":     user["id"],
-        "scanned_at":  datetime.datetime.utcnow().isoformat(),
-        "crop":        data.get("crop", ""),
-        "land":        data.get("land", 0),
-        "result":      data.get("result", {}),
-        "location":    data.get("weather", {}).get("location", ""),
-        "temperature": data.get("weather", {}).get("temperature", ""),
-        "image":       data.get("image_base64", ""),
-    }
-    scans.insert(0, new_scan)
-    scans = scans[:200]  # keep last 200
-    _save_scans(scans)
-    return jsonify({"success": True, "id": new_scan["id"]}), 201
+    data    = request.get_json() or {}
+    result  = data.get("result", {})
+    weather = data.get("weather", {})
+
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO scans
+            (user_id, crop, land_acres, disease, confidence, severity,
+             health_score, yield_loss, location, temperature, result_json, image_base64)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        user["id"],
+        data.get("crop", ""),
+        data.get("land", 0),
+        result.get("disease", ""),
+        result.get("confidence", 0),
+        result.get("severity", ""),
+        result.get("health_score", 0),
+        result.get("yield_loss", ""),
+        weather.get("location", ""),
+        weather.get("temperature", 0),
+        json.dumps(result),
+        data.get("image_base64", ""),
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Scan saved successfully"}), 201
 
 
-@scan_bp.route("/scans/history", methods=["GET", "OPTIONS"])
+# ─────────────────────────────────────────────────────────────
+# GET /scans/history
+# ─────────────────────────────────────────────────────────────
+@scans_bp.route("/history", methods=["GET"])
 def get_history():
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
-    user = _auth(request)
+    user = get_current_user()
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
 
-    scans      = _load_scans()
-    user_scans = [s for s in scans if s.get("user_id") == user["id"]]
-    return jsonify({"scans": user_scans}), 200
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT id, crop, land_acres, disease, confidence, severity,
+               health_score, yield_loss, location, temperature,
+               result_json, image_base64, scanned_at
+        FROM scans
+        WHERE user_id = ?
+        ORDER BY scanned_at DESC
+        LIMIT 50
+    """, (user["id"],)).fetchall()
+    conn.close()
+
+    scans = []
+    for row in rows:
+        scans.append({
+            "id":           row["id"],
+            "crop":         row["crop"],
+            "land":         row["land_acres"],
+            "disease":      row["disease"],
+            "confidence":   row["confidence"],
+            "severity":     row["severity"],
+            "health_score": row["health_score"],
+            "yield_loss":   row["yield_loss"],
+            "location":     row["location"],
+            "temperature":  row["temperature"],
+            "result":       json.loads(row["result_json"] or "{}"),
+            "image":        row["image_base64"],
+            "scanned_at":   row["scanned_at"],
+        })
+
+    return jsonify({"scans": scans, "total": len(scans)}), 200
 
 
-@scan_bp.route("/scans/all", methods=["DELETE", "OPTIONS"])
-def delete_all_scans():
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
-    user = _auth(request)
-    if not user:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    scans = [s for s in _load_scans() if s.get("user_id") != user["id"]]
-    _save_scans(scans)
-    return jsonify({"success": True}), 200
-
-
-@scan_bp.route("/scans/<scan_id>", methods=["DELETE", "OPTIONS"])
+# ─────────────────────────────────────────────────────────────
+# DELETE /scans/<scan_id>
+# ─────────────────────────────────────────────────────────────
+@scans_bp.route("/<int:scan_id>", methods=["DELETE"])
 def delete_scan(scan_id):
-    if request.method == "OPTIONS":
-        return jsonify({}), 200
-    user = _auth(request)
+    user = get_current_user()
     if not user:
         return jsonify({"error": "Unauthorized"}), 401
 
-    scans = [s for s in _load_scans() if not (s["id"] == scan_id and s.get("user_id") == user["id"])]
-    _save_scans(scans)
-    return jsonify({"success": True}), 200
+    conn = get_db()
+    conn.execute("DELETE FROM scans WHERE id = ? AND user_id = ?", (scan_id, user["id"]))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Scan deleted"}), 200
+
+
+# ─────────────────────────────────────────────────────────────
+# DELETE /scans/all
+# ─────────────────────────────────────────────────────────────
+@scans_bp.route("/all", methods=["DELETE"])
+def delete_all_scans():
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db()
+    conn.execute("DELETE FROM scans WHERE user_id = ?", (user["id"],))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "All scans deleted"}), 200
+
+
+# =============================================================
+# DOWNLOADS ENDPOINTS
+# =============================================================
+
+# ─────────────────────────────────────────────────────────────
+# POST /downloads/save
+# Body: { title, crop, land, disease, confidence, severity,
+#         health_score, image_base64, html_content }
+# ─────────────────────────────────────────────────────────────
+@downloads_bp.route("/save", methods=["POST"])
+def save_download():
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json() or {}
+
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO downloads
+            (user_id, title, crop, land_acres, disease, confidence,
+             severity, health_score, image_base64, html_content)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        user["id"],
+        data.get("title", "Crop Report"),
+        data.get("crop", ""),
+        data.get("land", 0),
+        data.get("disease", ""),
+        data.get("confidence", 0),
+        data.get("severity", ""),
+        data.get("health_score", 0),
+        data.get("image_base64", ""),
+        data.get("html_content", ""),
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Download saved successfully"}), 201
+
+
+# ─────────────────────────────────────────────────────────────
+# GET /downloads/list
+# Returns all downloads for user, newest first
+# ─────────────────────────────────────────────────────────────
+@downloads_bp.route("/list", methods=["GET"])
+def get_downloads():
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT id, title, crop, land_acres, disease, confidence,
+               severity, health_score, image_base64, html_content, downloaded_at
+        FROM downloads
+        WHERE user_id = ?
+        ORDER BY downloaded_at DESC
+        LIMIT 50
+    """, (user["id"],)).fetchall()
+    conn.close()
+
+    downloads = []
+    for row in rows:
+        downloads.append({
+            "id":           row["id"],
+            "title":        row["title"],
+            "crop":         row["crop"],
+            "land":         row["land_acres"],
+            "disease":      row["disease"],
+            "confidence":   row["confidence"],
+            "severity":     row["severity"],
+            "health_score": row["health_score"],
+            "image":        row["image_base64"],
+            "html":         row["html_content"],
+            "downloaded_at":row["downloaded_at"],
+        })
+
+    return jsonify({"downloads": downloads, "total": len(downloads)}), 200
+
+
+# ─────────────────────────────────────────────────────────────
+# DELETE /downloads/<download_id>
+# ─────────────────────────────────────────────────────────────
+@downloads_bp.route("/<int:download_id>", methods=["DELETE"])
+def delete_download(download_id):
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db()
+    conn.execute("DELETE FROM downloads WHERE id = ? AND user_id = ?", (download_id, user["id"]))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Download deleted"}), 200
+
+
+# ─────────────────────────────────────────────────────────────
+# DELETE /downloads/all
+# ─────────────────────────────────────────────────────────────
+@downloads_bp.route("/all", methods=["DELETE"])
+def delete_all_downloads():
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db()
+    conn.execute("DELETE FROM downloads WHERE user_id = ?", (user["id"],))
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "All downloads deleted"}), 200

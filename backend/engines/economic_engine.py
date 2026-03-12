@@ -3,12 +3,20 @@
 # PURPOSE: Calculates crop economic loss in Indian Rupees
 #
 # FORMULA USED:
-#   effective_loss% = (confidence/100) * yield_loss * (1 + weather_risk/100)
-#   projected_loss  = land * yield_per_acre * msp_per_kg * effective_loss%
+#   weather_multiplier = 1.0 + (weather_risk / 200)       → range 1.0 to 1.5
+#   confidence_factor  = 0.7 + 0.3 * (confidence / 100)  → range 0.70 to 1.0
+#   effective_loss%    = loss_pct * weather_multiplier * confidence_factor
+#   projected_loss     = land * yield_per_acre * msp_per_kg * effective_loss%
+#
+# MSP RATES: Official Government of India rates for 2025-26
+#   Kharif crops: CCEA approved May 2025
+#   Rabi crops:   CCEA approved October 2024
+#   Vegetables (tomato/potato/onion): NOT under MSP — uses average mandi prices
+#   Source: pib.gov.in, desagri.gov.in
 #
 # ALL INPUTS COME FROM:
 #   confidence    → AI model output (predictor.py)
-#   yield_loss    → AI model output based on detected disease
+#   loss_pct      → per-disease value from ADVICE_DB in predictor.py
 #   weather_risk  → Live weather API (weather_service.py)
 #   crop_name     → Farmer's input from crop popup
 #   land_acres    → Farmer's input from crop popup
@@ -26,56 +34,64 @@
 #   3. Also add it to YIELD_PER_ACRE below
 # ─────────────────────────────────────────────────────────────
 MSP_PER_QUINTAL = {
-    # Vegetables
-    "tomato": 1200,
-    "potato": 600,
-    "onion": 800,
-    "brinjal": 700,
-    "eggplant": 700,
-    "cabbage": 500,
-    "cauliflower": 600,
-    "spinach": 500,
-    "chilli": 9000,
-    "pepper": 1500,
-    "shimla mirch": 1500,
-    # Cereals
-    "wheat": 2275,
-    "rice": 2183,
-    "paddy": 2183,
-    "maize": 1962,
-    "corn": 1962,
-    "jowar": 3180,
-    "bajra": 2500,
-    "ragi": 3846,
-    # Pulses
-    "chickpea": 5440,
-    "gram": 5440,
-    "lentil": 6000,
-    "moong": 8558,
-    "tur": 7000,
-    "urad": 6950,
-    "peas": 1350,
-    # Oilseeds
-    "soybean": 4600,
-    "soya": 4600,
-    "mustard": 5650,
-    "rapeseed": 5650,
-    "sunflower": 6760,
-    "groundnut": 6377,
-    "peanut": 6377,
-    # Cash crops
-    "cotton": 6620,
-    "sugarcane": 315,
-    # Fruits
-    "banana": 900,
-    "mango": 1500,
-    "pomegranate": 5000,
-    "guava": 800,
-    "papaya": 500,
-    "watermelon": 400,
-    "apple": 3000,
-    "grape": 3500,
-    "strawberry": 8000,
+    # ── VEGETABLES (NOT under official MSP — using average market/mandi prices) ──
+    # Source: NAFED/NCCF market intervention data, average mandi prices 2024-25
+    # Tomato, Onion, Potato (TOP crops) are regulated via MIS scheme, not MSP
+    "tomato":      800,   # avg mandi ₹8/kg, highly volatile (₹5–₹25/kg range)
+    "potato":      700,   # avg mandi ₹7/kg (₹5–₹12/kg range)
+    "onion":       1000,  # avg mandi ₹10/kg (₹6–₹20/kg range)
+    "brinjal":     800,
+    "eggplant":    800,
+    "cabbage":     600,
+    "cauliflower": 800,
+    "spinach":     600,
+    "chilli":      9000,  # dried red chilli, approximate market price
+    "pepper":      2000,
+    "shimla mirch": 2000,
+
+    # ── CEREALS (Official MSP 2025-26, Government of India) ──────────────────
+    # Source: CCEA approved rates — Kharif 2025-26 & Rabi 2025-26
+    "wheat":  2425,   # Rabi 2025-26 (up from ₹2275 → +₹150/quintal)
+    "rice":   2369,   # Kharif 2025-26 common paddy (up from ₹2300 → +₹69)
+    "paddy":  2369,   # same as rice
+    "maize":  2400,   # Kharif 2025-26 (up from ₹2225 → +₹175/quintal)
+    "corn":   2400,
+    "jowar":  3371,   # Kharif 2025-26 hybrid jowar
+    "bajra":  2625,   # Kharif 2025-26 (up from ₹2500)
+    "ragi":   4931,   # Kharif 2025-26 (up from ₹3846 → +₹596 — highest hike)
+
+    # ── PULSES (Official MSP 2025-26) ────────────────────────────────────────
+    "chickpea": 5650,  # gram/chana, Rabi 2025-26 (up from ₹5440)
+    "gram":     5650,
+    "lentil":   6700,  # masur/lentil, Rabi 2025-26 (up from ₹6425)
+    "moong":    8768,  # Kharif 2025-26 (up from ₹8682 → +₹86)
+    "tur":      8000,  # arhar/pigeon pea, Kharif 2025-26 (up from ₹7550 → +₹450)
+    "urad":     7800,  # black gram, Kharif 2025-26 (up from ₹7400 → +₹400)
+    "peas":     1350,  # not under central MSP, approximate market price
+
+    # ── OILSEEDS (Official MSP 2025-26) ──────────────────────────────────────
+    "soybean":  5328,  # Kharif 2025-26 (up from ₹4892 → +₹436)
+    "soya":     5328,
+    "mustard":  5950,  # rapeseed/mustard, Rabi 2025-26 (up from ₹5650 → +₹300)
+    "rapeseed": 5950,
+    "sunflower": 7280, # Kharif 2025-26
+    "groundnut": 7263, # Kharif 2025-26 (up from ₹6783 → +₹480)
+    "peanut":   7263,
+
+    # ── CASH CROPS (Official MSP 2025-26) ────────────────────────────────────
+    "cotton":   7121,  # medium staple, Kharif 2025-26 (up from ₹6620 → +₹589)
+    "sugarcane": 340,  # FRP 2025-26 (Fair and Remunerative Price, up from ₹315)
+
+    # ── FRUITS (NOT under official MSP — approximate average market prices) ──
+    "banana":      1200,
+    "mango":       3000,
+    "pomegranate": 6000,
+    "guava":       1000,
+    "papaya":      800,
+    "watermelon":  500,
+    "apple":       5000,  # Himachal/Kashmir variety average
+    "grape":       4000,
+    "strawberry":  10000,
 }
 
 
@@ -169,12 +185,22 @@ def calculate_loss(crop_name, land_acres, loss_pct, confidence=100.0, weather_ri
     total_value = round(total_yield_kg * msp_per_kg)
 
     # ── CORE LOSS FORMULA ─────────────────────────────────────
-    # confidence/100 → scale by how sure AI is (e.g. 0.874)
-    # loss_pct       → base disease damage (e.g. 0.65 for Late Blight)
-    # (1 + weather_risk/100) → weather multiplier (e.g. 1.43 at risk=43)
+    # loss_pct           → base disease damage from ADVICE_DB (e.g. 0.65 for Late Blight)
+    #                       This is a fixed agronomic fact — independent of AI confidence
+    # weather_multiplier → weather amplifies spread risk: 1.0 (no risk) to 1.5 (high risk)
+    # confidence_factor  → mild adjustment only: high confidence = full estimate,
+    #                       low confidence = 70% of estimate (NEVER zeros out loss).
+    #                       Range: 0.7 (at conf=0) to 1.0 (at conf=100)
+    #
+    # WHY THIS CHANGE: confidence is the AI model's certainty score, NOT disease severity.
+    # A low-confidence detection of Late Blight still means Late Blight is present.
+    # The old formula (confidence/100 * loss_pct) wrongly gave ₹0 at 0% confidence,
+    # misleading farmers into ignoring a real disease.
     # ─────────────────────────────────────────────────────────
-    effective_loss_pct = (confidence / 100) * loss_pct * (1 + weather_risk / 100)
-    effective_loss_pct = min(effective_loss_pct, 1.0)  # Cap at 100% loss
+    weather_multiplier = 1.0 + (weather_risk / 200)        # 1.0 to 1.5 range
+    confidence_factor  = 0.7 + 0.3 * (confidence / 100)   # 0.70 to 1.0 range
+    effective_loss_pct = loss_pct * weather_multiplier * confidence_factor
+    effective_loss_pct = min(effective_loss_pct, 1.0)      # Cap at 100% loss
 
     projected_loss = round(total_value * effective_loss_pct)
     treatment_cost = round(land_acres * 1200)  # ~Rs 1200/acre for treatment

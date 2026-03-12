@@ -1,41 +1,16 @@
 # =============================================================
-# FILE: backend/requirements.txt
-# PURPOSE: Python packages needed to run Flask backend
-#
-# INSTALL ALL AT ONCE:
-#   pip install -r requirements.txt
-#
-# PYTHON VERSION: 3.9 to 3.11 recommended
-#   (ultralytics supports 3.8-3.11 fully)
+# KrishiVigil.ai — Backend Requirements
+# INSTALL: pip3 install -r requirements.txt
+# PYTHON:  3.13 compatible
 # =============================================================
 
-# Web framework
 flask==3.0.2
 flask-cors==4.0.0
-
-# Image processing (for decoding uploaded crop images)
-Pillow==10.2.0
-
-# Math (for inference calculations and array ops)
-numpy==1.26.4
-
-# HTTP requests (for OpenWeatherMap API calls)
+Pillow>=10.3.0
+numpy>=1.26.4
 requests==2.31.0
+bcrypt==4.1.2
+PyJWT==2.8.0
 
-# =============================================================
-# YOLOv8 — installs ultralytics + torch + torchvision
-#
-# This replaces tensorflow from the previous version.
-# ultralytics automatically installs the correct torch version.
-#
-# CPU-only install (works on any machine, no GPU needed):
-#   pip install ultralytics
-#
-# GPU install (faster inference if you have NVIDIA GPU):
-#   pip install ultralytics
-#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-#
-# After installing, verify with:
-#   python -c "from ultralytics import YOLO; print('YOLOv8 ready')"
-# =============================================================
+# YOLOv8 — installs torch + torchvision automatically
 ultralytics>=8.0.0
